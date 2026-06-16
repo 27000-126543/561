@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
+import * as echarts from 'echarts';
 import type { ProvinceData } from '@/types';
 
 interface ChinaMapChartProps {
@@ -7,7 +8,7 @@ interface ChinaMapChartProps {
   onProvinceClick?: (province: ProvinceData) => void;
 }
 
-const provinceCoords: Record<string, [number, number]> = {
+const provinceCenters: Record<string, [number, number]> = {
   '北京市': [116.46, 39.92],
   '天津市': [117.20, 39.13],
   '河北省': [114.48, 38.03],
@@ -41,45 +42,56 @@ const provinceCoords: Record<string, [number, number]> = {
   '新疆维吾尔自治区': [87.62, 43.82],
 };
 
-const chinaOutlinePoints = [
-  [73.5, 39.5], [75.0, 37.0], [78.0, 37.0], [80.0, 40.0], [83.0, 47.0],
-  [85.0, 48.5], [88.0, 49.0], [90.0, 47.0], [95.0, 45.0], [97.0, 42.5],
-  [98.0, 40.0], [100.0, 42.0], [102.0, 42.0], [105.0, 41.5], [108.0, 42.0],
-  [110.0, 42.5], [111.0, 44.0], [114.0, 45.0], [117.0, 44.0], [119.0, 44.5],
-  [121.0, 44.0], [123.0, 45.5], [126.0, 44.0], [127.0, 42.0], [128.0, 40.0],
-  [127.0, 38.0], [126.0, 37.0], [124.0, 35.0], [122.0, 33.0], [122.0, 32.0],
-  [122.0, 30.0], [121.0, 28.5], [119.0, 26.5], [117.0, 24.5], [115.0, 23.0],
-  [114.0, 22.0], [111.0, 21.5], [109.0, 21.5], [108.0, 21.0], [106.5, 20.0],
-  [104.0, 21.5], [102.0, 22.0], [100.0, 21.3], [98.0, 22.0], [96.0, 22.5],
-  [95.0, 24.0], [94.0, 25.0], [93.0, 26.0], [91.0, 27.5], [89.0, 28.0],
-  [87.0, 28.0], [86.0, 28.0], [85.0, 29.0], [83.0, 30.0], [82.0, 32.0],
-  [81.0, 34.0], [80.0, 35.5], [79.0, 36.5], [76.0, 37.5], [74.0, 38.5],
-  [73.5, 39.5],
-];
+const chinaGeoJSON = {
+  type: 'FeatureCollection',
+  features: Object.entries(provinceCenters).map(([name, center]) => {
+    const [lng, lat] = center;
+    const offset = 2.5;
+    return {
+      type: 'Feature',
+      properties: { name },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [lng - offset, lat - offset],
+          [lng + offset, lat - offset],
+          [lng + offset, lat + offset],
+          [lng - offset, lat + offset],
+          [lng - offset, lat - offset],
+        ]],
+      },
+    };
+  }),
+};
 
 export default function ChinaMapChart({ data, onProvinceClick }: ChinaMapChartProps) {
+  const [mapRegistered, setMapRegistered] = useState(false);
+
+  useEffect(() => {
+    try {
+      echarts.registerMap('china', chinaGeoJSON as any);
+      setMapRegistered(true);
+    } catch (e) {
+      console.warn('Map registration failed:', e);
+      setMapRegistered(true);
+    }
+  }, []);
+
   const option = useMemo(() => {
-    const highRiskData: any[] = [];
-    const mediumRiskData: any[] = [];
-    const lowRiskData: any[] = [];
-
-    data.forEach((item) => {
-      const coord = provinceCoords[item.name];
-      if (!coord) return;
-
-      const pointData = {
-        name: item.name,
-        value: [...coord, item.value],
+    if (!mapRegistered) {
+      return {
+        title: { text: '地图加载中...', left: 'center', top: 'center' },
+        series: [],
       };
+    }
 
-      if (item.value >= 70) {
-        highRiskData.push(pointData);
-      } else if (item.value >= 40) {
-        mediumRiskData.push(pointData);
-      } else {
-        lowRiskData.push(pointData);
-      }
-    });
+    const mapData = data.map((item) => ({
+      name: item.name,
+      value: item.value,
+      riskLevel: item.riskLevel,
+      projectCount: item.projectCount,
+      paymentRate: item.paymentRate,
+    }));
 
     return {
       tooltip: {
@@ -94,13 +106,13 @@ export default function ChinaMapChart({ data, onProvinceClick }: ChinaMapChartPr
           const provinceName = params.name;
           if (!provinceName) return '';
           const dataItem = data.find((d) => d.name === provinceName);
-          if (!dataItem) return '';
+          if (!dataItem) return `${provinceName}: 暂无数据`;
 
           const riskText = { high: '高风险', medium: '中风险', low: '低风险' }[dataItem.riskLevel];
           const riskColor = dataItem.riskLevel === 'high' ? '#ef4444' : dataItem.riskLevel === 'medium' ? '#f97316' : '#22c55e';
 
           return `
-            <div style="padding: 4px 0; min-width: 180px;">
+            <div style="padding: 4px 0; min-width: 200px;">
               <div style="font-weight: 600; margin-bottom: 8px; color: #1f2937; font-size: 14px;">${provinceName}</div>
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                 <span style="color: #6b7280;">风险评分：</span>
@@ -122,139 +134,119 @@ export default function ChinaMapChart({ data, onProvinceClick }: ChinaMapChartPr
           `;
         },
       },
+      visualMap: {
+        type: 'piecewise',
+        pieces: [
+          { min: 70, max: 100, color: '#ef4444', label: '高风险 (≥70)' },
+          { min: 40, max: 69, color: '#f97316', label: '中风险 (40-69)' },
+          { min: 0, max: 39, color: '#22c55e', label: '低风险 (<40)' },
+        ],
+        left: 20,
+        bottom: 20,
+        itemWidth: 20,
+        itemHeight: 14,
+        textStyle: {
+          color: '#6b7280',
+          fontSize: 11,
+        },
+      },
       geo: {
-        show: false,
-      },
-      xAxis: {
-        type: 'value',
-        min: 70,
-        max: 140,
-        show: false,
-      },
-      yAxis: {
-        type: 'value',
-        min: 15,
-        max: 55,
-        show: false,
+        map: 'china',
+        roam: false,
+        zoom: 1.2,
+        center: [104, 36],
+        label: {
+          show: true,
+          color: '#1e3a5f',
+          fontSize: 10,
+          fontWeight: 500,
+        },
+        itemStyle: {
+          areaColor: '#f3f4f6',
+          borderColor: '#cbd5e1',
+          borderWidth: 1,
+        },
+        emphasis: {
+          label: {
+            show: true,
+            color: '#fff',
+            fontSize: 12,
+            fontWeight: 600,
+          },
+          itemStyle: {
+            areaColor: '#1e40af',
+            borderColor: '#1e3a5f',
+            borderWidth: 2,
+            shadowBlur: 15,
+            shadowColor: 'rgba(30, 58, 95, 0.4)',
+          },
+        },
       },
       series: [
         {
-          type: 'line',
-          data: chinaOutlinePoints,
-          coordinateSystem: 'cartesian2d',
-          smooth: false,
-          showSymbol: false,
-          lineStyle: {
-            color: '#cbd5e1',
-            width: 1.5,
-            type: 'solid',
+          name: '欠薪风险',
+          type: 'map',
+          map: 'china',
+          roam: false,
+          zoom: 1.2,
+          center: [104, 36],
+          data: mapData,
+          label: {
+            show: true,
+            color: '#1e3a5f',
+            fontSize: 10,
+            fontWeight: 500,
           },
-          areaStyle: {
-            color: {
-              type: 'linear',
+          itemStyle: {
+            borderColor: '#cbd5e1',
+            borderWidth: 1,
+          },
+          emphasis: {
+            label: {
+              show: true,
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 600,
+            },
+            itemStyle: {
+              borderColor: '#1e3a5f',
+              borderWidth: 2,
+              shadowBlur: 15,
+              shadowColor: 'rgba(30, 58, 95, 0.4)',
             },
           },
-          z: 1,
-          silent: true,
         },
         {
-          name: '高风险',
+          name: '风险标记',
           type: 'effectScatter',
-          coordinateSystem: 'cartesian2d',
-          data: highRiskData,
-          symbolSize: (val: any) => {
-            const riskValue = val[2];
-            return 18 + (riskValue - 70) * 0.6;
-          },
+          coordinateSystem: 'geo',
+          zlevel: 2,
           rippleEffect: {
             brushType: 'stroke',
-            scale: 4,
+            scale: 3,
             period: 4,
           },
-          itemStyle: {
-            color: '#ef4444',
-            shadowBlur: 10,
-            shadowColor: 'rgba(239, 68, 68, 0.5)',
-          },
-          label: {
-            show: true,
-            formatter: '{b}',
-            position: 'right',
-            color: '#ef4444',
-            fontSize: 11,
-            fontWeight: 600,
-          },
-          emphasis: {
-            itemStyle: {
-              shadowBlur: 20,
-              shadowColor: 'rgba(239, 68, 68, 0.8)',
-            },
-          },
-          z: 3,
-        },
-        {
-          name: '中风险',
-          type: 'scatter',
-          coordinateSystem: 'cartesian2d',
-          data: mediumRiskData,
           symbolSize: (val: any) => {
             const riskValue = val[2];
-            return 10 + (riskValue - 40) * 0.4;
+            if (riskValue >= 70) return 14;
+            if (riskValue >= 40) return 10;
+            return 6;
           },
           itemStyle: {
-            color: '#f97316',
-            shadowBlur: 5,
-            shadowColor: 'rgba(249, 115, 22, 0.4)',
+            color: '#fff',
+            shadowBlur: 8,
+            shadowColor: 'rgba(255, 255, 255, 0.6)',
           },
-          label: {
-            show: true,
-            formatter: '{b}',
-            position: 'right',
-            color: '#ea580c',
-            fontSize: 10,
-            fontWeight: 500,
-          },
-          emphasis: {
-            itemStyle: {
-              shadowBlur: 15,
-              shadowColor: 'rgba(249, 115, 22, 0.7)',
-            },
-          },
-          z: 2,
-        },
-        {
-          name: '低风险',
-          type: 'scatter',
-          coordinateSystem: 'cartesian2d',
-          data: lowRiskData,
-          symbolSize: (val: any) => {
-            const riskValue = val[2];
-            return 6 + riskValue * 0.15;
-          },
-          itemStyle: {
-            color: '#22c55e',
-            shadowBlur: 3,
-            shadowColor: 'rgba(34, 197, 94, 0.4)',
-          },
-          label: {
-            show: true,
-            formatter: '{b}',
-            position: 'right',
-            color: '#16a34a',
-            fontSize: 10,
-            fontWeight: 500,
-          },
-          emphasis: {
-            itemStyle: {
-              shadowBlur: 12,
-              shadowColor: 'rgba(34, 197, 94, 0.7)',
-            },
-          },
-          z: 2,
+          data: data
+            .filter((d) => d.value >= 40)
+            .map((d) => ({
+              name: d.name,
+              value: [...(provinceCenters[d.name] || [0, 0]), d.value],
+            })),
         },
       ],
     };
-  }, [data]);
+  }, [data, mapRegistered]);
 
   const handleChartClick = (params: any) => {
     if (onProvinceClick && params.name) {

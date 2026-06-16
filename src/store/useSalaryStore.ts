@@ -221,7 +221,7 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
           actual: name,
           description: `【姓名不一致】身份证号${idCard}在系统中登记姓名为「${systemWorker.name}」，但工资表中为「${name}」`,
         });
-        continue;
+        return;
       }
 
       if (systemWorker.status !== 'active') {

@@ -122,6 +122,65 @@ function filterComplaintsByRole(complaints: Complaint[], projects: Project[], us
   return complaints.filter((c) => filteredProjectIds.has(c.projectId));
 }
 
+function filterWeeklyReportsByRole(
+  reports: WeeklyReport[],
+  projects: Project[],
+  warnings: Warning[],
+  complaints: Complaint[],
+  user: User
+): WeeklyReport[] {
+  const filteredProjects = filterProjectsByRole(projects, user);
+  const filteredProjectIds = new Set(filteredProjects.map((p) => p.id));
+  const filteredWarnings = filterWarningsByRole(warnings, user);
+  const filteredComplaints = filterComplaintsByRole(complaints, projects, user);
+
+  if (user.role === 'national') {
+    return reports;
+  }
+
+  const targetProvince = user.province;
+  const targetCity = user.city;
+
+  return reports.map((report) => {
+    const filteredRiskDistribution = report.riskDistribution.filter(
+      (r) => r.province === targetProvince
+    );
+
+    const areaName = user.role === 'municipal' ? `${targetProvince}${targetCity}` : targetProvince;
+
+    const scaledFactor = user.role === 'municipal' ? 0.15 : 0.3;
+
+    return {
+      ...report,
+      title: report.title.replace('全国', areaName),
+      summary: {
+        ...report.summary,
+        totalProjects: filteredProjects.length,
+        avgPaymentRate: filteredProjects.length > 0
+          ? Math.round((filteredProjects.reduce((sum, p) => sum + p.paymentRate, 0) / filteredProjects.length) * 10) / 10
+          : 0,
+        totalWarnings: filteredWarnings.length,
+        totalComplaints: filteredComplaints.length,
+        totalOwedAmount: Math.round(report.summary.totalOwedAmount * scaledFactor),
+      },
+      riskDistribution: filteredRiskDistribution,
+      paymentRanking: filteredRiskDistribution.length > 0
+        ? [{
+            province: targetProvince,
+            paymentRate: filteredProjects.length > 0
+              ? Math.round((filteredProjects.reduce((sum, p) => sum + p.paymentRate, 0) / filteredProjects.length) * 10) / 10
+              : 0,
+            rank: 1,
+          }]
+        : [],
+      complaintRanking: report.complaintRanking.map((c) => ({
+        ...c,
+        count: Math.round(c.count * scaledFactor),
+      })),
+    };
+  });
+}
+
 function computeDashboardStats(projects: Project[], warnings: Warning[], complaints: Complaint[]): DashboardStats {
   if (projects.length === 0) {
     return {
@@ -168,7 +227,20 @@ const formatDate = (date: Date): string => {
   return date.toISOString().replace('T', ' ').slice(0, 19);
 };
 
-const generateWarningId = (): string => `w${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+const generateWarningId = (projectId: string, type: string): string => {
+  const hash = projectId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return `w${hash}${type}`;
+};
+
+const hashProjectId = (projectId: string): number => {
+  let hash = 0;
+  for (let i = 0; i < projectId.length; i++) {
+    const char = projectId.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash);
+};
 
 const createApprovalFlow = (): ApprovalStep[] => [
   { id: 'a1', level: 1, title: '项目经理确认', approver: null, status: 'pending', comment: null, approveTime: null },
@@ -265,13 +337,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     const result: Warning[] = [];
     const now = new Date();
 
-    projects.forEach((project, projectIndex) => {
+    projects.forEach((project) => {
+      const projectHash = hashProjectId(project.id);
+
       if (project.paymentRate < settings.paymentRate) {
-        const isConsecutive = Math.random() < 0.3;
-        const daysAgo = Math.floor(Math.random() * 8);
+        const isConsecutive = projectHash % 3 === 0;
+        const daysAgo = projectHash % 7;
         const createTime = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
         const handleDeadline = new Date(createTime.getTime() + settings.escalateDays * 24 * 60 * 60 * 1000);
-        const isEscalated = isConsecutive || (now.getTime() - createTime.getTime() > settings.escalateDays * 24 * 60 * 60 * 1000);
+        const daysSinceCreated = Math.floor((now.getTime() - createTime.getTime()) / (24 * 60 * 60 * 1000));
+        const isEscalated = isConsecutive || (daysSinceCreated > settings.escalateDays);
         const level = isEscalated ? 'secondary' : 'primary';
         const status: Warning['status'] = isEscalated ? 'escalated' : 'pending';
 
@@ -284,7 +359,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           : `该项目本月工资发放率为${project.paymentRate}%，低于设定的预警阈值${settings.paymentRate}%，请及时关注。`;
 
         result.push({
-          id: generateWarningId() + projectIndex + 'p',
+          id: generateWarningId(project.id, 'p'),
           projectId: project.id,
           projectName: project.name,
           level,
@@ -299,14 +374,24 @@ export const useAppStore = create<AppState>((set, get) => ({
           approvalFlow: level === 'secondary' ? createApprovalFlow() : [],
           province: project.province,
           city: project.city,
+          evidence: {
+            paymentRate: project.paymentRate,
+            paymentRateThreshold: settings.paymentRate,
+            isConsecutive,
+            consecutiveMonths: isConsecutive ? 2 : 1,
+            daysSinceCreated,
+            escalateDays: settings.escalateDays,
+            isEscalated,
+          },
         });
       }
 
       if (project.fundRatio < settings.fundRatio) {
-        const daysAgo = Math.floor(Math.random() * 8);
+        const daysAgo = (projectHash + 2) % 7;
         const createTime = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
         const handleDeadline = new Date(createTime.getTime() + settings.escalateDays * 24 * 60 * 60 * 1000);
-        const isEscalated = now.getTime() - createTime.getTime() > settings.escalateDays * 24 * 60 * 60 * 1000;
+        const daysSinceCreated = Math.floor((now.getTime() - createTime.getTime()) / (24 * 60 * 60 * 1000));
+        const isEscalated = daysSinceCreated > settings.escalateDays;
         const level = isEscalated ? 'secondary' : 'primary';
         const status: Warning['status'] = isEscalated ? 'escalated' : 'pending';
 
@@ -314,7 +399,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const description = `该项目工资专户资金比为${project.fundRatio}%，已低于设定的预警阈值${settings.fundRatio}%，请督促施工单位及时补充资金。`;
 
         result.push({
-          id: generateWarningId() + projectIndex + 'f',
+          id: generateWarningId(project.id, 'f'),
           projectId: project.id,
           projectName: project.name,
           level,
@@ -329,6 +414,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           approvalFlow: level === 'secondary' ? createApprovalFlow() : [],
           province: project.province,
           city: project.city,
+          evidence: {
+            fundRatio: project.fundRatio,
+            fundRatioThreshold: settings.fundRatio,
+            daysSinceCreated,
+            escalateDays: settings.escalateDays,
+            isEscalated,
+          },
         });
       }
     });
@@ -360,7 +452,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   getFilteredWeeklyReports: () => {
-    return get().weeklyReports;
+    const { weeklyReports, projects, warnings, complaints, user } = get();
+    return filterWeeklyReportsByRole(weeklyReports, projects, warnings, complaints, user);
   },
 
   getFilteredComplaints: () => {

@@ -48,6 +48,18 @@ export type WarningLevel = 'primary' | 'secondary';
 export type WarningType = 'low_payment_rate' | 'insufficient_funds' | 'complaint';
 export type WarningStatus = 'pending' | 'processing' | 'resolved' | 'escalated';
 
+export interface WarningEvidence {
+  paymentRate?: number;
+  paymentRateThreshold?: number;
+  fundRatio?: number;
+  fundRatioThreshold?: number;
+  isConsecutive?: boolean;
+  consecutiveMonths?: number;
+  daysSinceCreated?: number;
+  escalateDays?: number;
+  isEscalated?: boolean;
+}
+
 export interface Warning {
   id: string;
   projectId: string;
@@ -64,6 +76,7 @@ export interface Warning {
   approvalFlow: ApprovalStep[];
   province: string;
   city: string;
+  evidence?: WarningEvidence;
 }
 
 export interface ApprovalStep {

@@ -253,6 +253,108 @@ export default function WarningDetail() {
           <h3 className="text-sm font-medium text-gray-700 mb-2">预警描述</h3>
           <p className="text-sm text-gray-600 leading-relaxed">{warning.description}</p>
         </div>
+
+        {warning.evidence && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">预警判断依据</h3>
+            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+              {warning.evidence.paymentRate !== undefined && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">工资发放率</span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      'text-sm font-semibold',
+                      warning.evidence.paymentRate < (warning.evidence.paymentRateThreshold || 80)
+                        ? 'text-red-600'
+                        : 'text-green-600'
+                    )}>
+                      {warning.evidence.paymentRate}%
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      (阈值: {warning.evidence.paymentRateThreshold}%)
+                    </span>
+                    {warning.evidence.paymentRate < (warning.evidence.paymentRateThreshold || 80) && (
+                      <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded">低于阈值</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {warning.evidence.fundRatio !== undefined && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">专户资金比</span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      'text-sm font-semibold',
+                      warning.evidence.fundRatio < (warning.evidence.fundRatioThreshold || 50)
+                        ? 'text-red-600'
+                        : 'text-green-600'
+                    )}>
+                      {warning.evidence.fundRatio}%
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      (阈值: {warning.evidence.fundRatioThreshold}%)
+                    </span>
+                    {warning.evidence.fundRatio < (warning.evidence.fundRatioThreshold || 50) && (
+                      <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded">低于阈值</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {warning.evidence.isConsecutive !== undefined && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">连续低于阈值</span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      'text-sm font-semibold',
+                      warning.evidence.isConsecutive ? 'text-red-600' : 'text-yellow-600'
+                    )}>
+                      {warning.evidence.isConsecutive ? `已连续 ${warning.evidence.consecutiveMonths} 个月` : '本月首次'}
+                    </span>
+                    {warning.evidence.isConsecutive && (
+                      <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded">触发升级</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {warning.evidence.daysSinceCreated !== undefined && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">预警生成天数</span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      'text-sm font-semibold',
+                      warning.evidence.isEscalated ? 'text-red-600' : 'text-gray-800'
+                    )}>
+                      {warning.evidence.daysSinceCreated} 天
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      (升级阈值: {warning.evidence.escalateDays} 天)
+                    </span>
+                    {warning.evidence.isEscalated && warning.evidence.daysSinceCreated > (warning.evidence.escalateDays || 5) && (
+                      <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded">超时未处理</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {warning.evidence.isEscalated !== undefined && (
+                <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                  <span className="text-sm text-gray-600">预警等级</span>
+                  <span className={cn(
+                    'text-sm font-semibold px-2 py-0.5 rounded',
+                    warning.evidence.isEscalated
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-orange-100 text-orange-700'
+                  )}>
+                    {warning.evidence.isEscalated ? '二级预警（已升级）' : '一级预警'}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {project && (

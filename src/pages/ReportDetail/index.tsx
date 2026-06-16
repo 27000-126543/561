@@ -24,7 +24,8 @@ import { cn } from '@/lib/utils';
 export default function ReportDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { weeklyReports } = useAppStore();
+  const { user, getFilteredWeeklyReports } = useAppStore();
+  const weeklyReports = useMemo(() => getFilteredWeeklyReports(), [user, getFilteredWeeklyReports]);
 
   const report = useMemo(() => {
     return weeklyReports.find(r => r.id === id);
