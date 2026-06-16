@@ -140,43 +140,66 @@ function filterWeeklyReportsByRole(
 
   const targetProvince = user.province;
   const targetCity = user.city;
+  const areaName = user.role === 'municipal' ? `${targetProvince}${targetCity}` : targetProvince;
+
+  const areaPaymentRate = filteredProjects.length > 0
+    ? Math.round((filteredProjects.reduce((sum, p) => sum + p.paymentRate, 0) / filteredProjects.length) * 10) / 10
+    : 0;
+
+  const areaRiskScore = filteredProjects.length > 0
+    ? Math.round((filteredProjects.reduce((sum, p) => sum + p.riskScore, 0) / filteredProjects.length) * 10) / 10
+    : 0;
+
+  const areaRiskLevel: 'high' | 'medium' | 'low' =
+    areaRiskScore >= 70 ? 'high' : areaRiskScore >= 40 ? 'medium' : 'low';
+
+  const complaintTypeCount: Record<string, number> = {};
+  filteredComplaints.forEach((c) => {
+    complaintTypeCount[c.type] = (complaintTypeCount[c.type] || 0) + 1;
+  });
+
+  const totalComplaints = filteredComplaints.length;
+  const areaComplaintRanking = Object.entries(complaintTypeCount)
+    .map(([type, count]) => ({
+      type,
+      count,
+      percentage: totalComplaints > 0 ? Math.round((count / totalComplaints) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  const areaRiskDistribution = filteredProjects.length > 0
+    ? [{
+        province: user.role === 'municipal' ? targetCity || targetProvince : targetProvince,
+        riskLevel: areaRiskLevel,
+        warningCount: filteredWarnings.length,
+        riskScore: areaRiskScore,
+      }]
+    : [];
+
+  const areaPaymentRanking = filteredProjects.length > 0
+    ? [{
+        province: user.role === 'municipal' ? targetCity || targetProvince : targetProvince,
+        paymentRate: areaPaymentRate,
+        rank: 1,
+      }]
+    : [];
 
   return reports.map((report) => {
-    const filteredRiskDistribution = report.riskDistribution.filter(
-      (r) => r.province === targetProvince
-    );
-
-    const areaName = user.role === 'municipal' ? `${targetProvince}${targetCity}` : targetProvince;
-
-    const scaledFactor = user.role === 'municipal' ? 0.15 : 0.3;
-
     return {
       ...report,
       title: report.title.replace('全国', areaName),
       summary: {
         ...report.summary,
         totalProjects: filteredProjects.length,
-        avgPaymentRate: filteredProjects.length > 0
-          ? Math.round((filteredProjects.reduce((sum, p) => sum + p.paymentRate, 0) / filteredProjects.length) * 10) / 10
-          : 0,
+        avgPaymentRate: areaPaymentRate,
         totalWarnings: filteredWarnings.length,
-        totalComplaints: filteredComplaints.length,
-        totalOwedAmount: Math.round(report.summary.totalOwedAmount * scaledFactor),
+        totalComplaints,
+        totalOwedAmount: Math.round(filteredWarnings.length * 800),
       },
-      riskDistribution: filteredRiskDistribution,
-      paymentRanking: filteredRiskDistribution.length > 0
-        ? [{
-            province: targetProvince,
-            paymentRate: filteredProjects.length > 0
-              ? Math.round((filteredProjects.reduce((sum, p) => sum + p.paymentRate, 0) / filteredProjects.length) * 10) / 10
-              : 0,
-            rank: 1,
-          }]
-        : [],
-      complaintRanking: report.complaintRanking.map((c) => ({
-        ...c,
-        count: Math.round(c.count * scaledFactor),
-      })),
+      riskDistribution: areaRiskDistribution,
+      paymentRanking: areaPaymentRanking,
+      complaintRanking: areaComplaintRanking,
     };
   });
 }
@@ -335,7 +358,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   calculateWarnings: (projects: Project[], settings: WarningThreshold): Warning[] => {
     const result: Warning[] = [];
-    const now = new Date();
+    const baseDate = new Date('2026-06-16T00:00:00');
 
     projects.forEach((project) => {
       const projectHash = hashProjectId(project.id);
@@ -343,9 +366,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (project.paymentRate < settings.paymentRate) {
         const isConsecutive = projectHash % 3 === 0;
         const daysAgo = projectHash % 7;
-        const createTime = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+        const createTime = new Date(baseDate.getTime() - daysAgo * 24 * 60 * 60 * 1000);
         const handleDeadline = new Date(createTime.getTime() + settings.escalateDays * 24 * 60 * 60 * 1000);
-        const daysSinceCreated = Math.floor((now.getTime() - createTime.getTime()) / (24 * 60 * 60 * 1000));
+        const daysSinceCreated = Math.floor((baseDate.getTime() - createTime.getTime()) / (24 * 60 * 60 * 1000));
         const isEscalated = isConsecutive || (daysSinceCreated > settings.escalateDays);
         const level = isEscalated ? 'secondary' : 'primary';
         const status: Warning['status'] = isEscalated ? 'escalated' : 'pending';
@@ -388,9 +411,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (project.fundRatio < settings.fundRatio) {
         const daysAgo = (projectHash + 2) % 7;
-        const createTime = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+        const createTime = new Date(baseDate.getTime() - daysAgo * 24 * 60 * 60 * 1000);
         const handleDeadline = new Date(createTime.getTime() + settings.escalateDays * 24 * 60 * 60 * 1000);
-        const daysSinceCreated = Math.floor((now.getTime() - createTime.getTime()) / (24 * 60 * 60 * 1000));
+        const daysSinceCreated = Math.floor((baseDate.getTime() - createTime.getTime()) / (24 * 60 * 60 * 1000));
         const isEscalated = daysSinceCreated > settings.escalateDays;
         const level = isEscalated ? 'secondary' : 'primary';
         const status: Warning['status'] = isEscalated ? 'escalated' : 'pending';
@@ -425,7 +448,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     });
 
-    return result;
+    return result.sort((a, b) => {
+      if (a.level !== b.level) return a.level === 'secondary' ? -1 : 1;
+      if (a.riskScore !== b.riskScore) return b.riskScore - a.riskScore;
+      return a.id.localeCompare(b.id);
+    });
   },
 
   recalculateWarnings: () => {

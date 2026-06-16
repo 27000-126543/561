@@ -28,7 +28,7 @@ const statusColors: Record<string, string> = {
 };
 
 function getRemainingTime(deadline: string): { text: string; isUrgent: boolean } {
-  const now = new Date();
+  const now = new Date('2026-06-16T00:00:00');
   const deadlineDate = new Date(deadline);
   const diff = deadlineDate.getTime() - now.getTime();
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
@@ -40,6 +40,34 @@ function getRemainingTime(deadline: string): { text: string; isUrgent: boolean }
     return { text: `剩余${days}天`, isUrgent: true };
   }
   return { text: `剩余${days}天`, isUrgent: false };
+}
+
+function getEvidenceSummary(warning: Warning): string {
+  const e = warning.evidence;
+  if (!e) return '';
+
+  if (warning.type === 'low_payment_rate') {
+    const parts = [
+      `发放率${e.paymentRate}%<${e.paymentRateThreshold}%`,
+    ];
+    if (e.isConsecutive) parts.push('连续2个月');
+    if (e.isEscalated && e.daysSinceCreated > (e.escalateDays || 0)) {
+      parts.push(`超${e.escalateDays}天未处理`);
+    }
+    return parts.join('，');
+  }
+
+  if (warning.type === 'insufficient_funds') {
+    const parts = [
+      `资金比${e.fundRatio}%<${e.fundRatioThreshold}%`,
+    ];
+    if (e.isEscalated && e.daysSinceCreated > (e.escalateDays || 0)) {
+      parts.push(`超${e.escalateDays}天未处理`);
+    }
+    return parts.join('，');
+  }
+
+  return '';
 }
 
 export default function WarningCard({ warning }: WarningCardProps) {
@@ -100,6 +128,17 @@ export default function WarningCard({ warning }: WarningCardProps) {
         <Building2 className="w-4 h-4 text-gray-400" />
         <span className="truncate">{warning.projectName}</span>
       </div>
+
+      {warning.evidence && (
+        <div className="mb-3 p-2.5 bg-amber-50 rounded-md border border-amber-100">
+          <div className="flex items-start gap-2">
+            <span className="text-xs text-amber-700 font-medium whitespace-nowrap mt-0.5">触发依据：</span>
+            <span className="text-xs text-amber-800 leading-relaxed">
+              {getEvidenceSummary(warning)}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="flex items-center gap-2 text-sm">

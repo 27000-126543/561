@@ -291,6 +291,34 @@ export default function ReportDetail() {
     );
   }
 
+  const jurisdictionInfo = (() => {
+    if (user.role === 'national') {
+      return {
+        scope: '全国',
+        scopeDesc: '全国所有在建项目',
+        projects: report.summary.totalProjects,
+        warnings: report.summary.totalWarnings,
+        complaints: report.summary.totalComplaints,
+      };
+    }
+    if (user.role === 'provincial') {
+      return {
+        scope: user.province,
+        scopeDesc: `${user.province}管辖范围内在建项目`,
+        projects: report.summary.totalProjects,
+        warnings: report.summary.totalWarnings,
+        complaints: report.summary.totalComplaints,
+      };
+    }
+    return {
+      scope: `${user.province}${user.city}`,
+      scopeDesc: `${user.city}管辖范围内在建项目`,
+      projects: report.summary.totalProjects,
+      warnings: report.summary.totalWarnings,
+      complaints: report.summary.totalComplaints,
+    };
+  })();
+
   return (
     <div className="space-y-6">
       <button
@@ -356,6 +384,40 @@ export default function ReportDetail() {
               <div className="text-xl sm:text-2xl font-bold text-red-300">
                 {(report.summary.totalOwedAmount / 10000).toFixed(2)}
                 <span className="text-sm font-normal text-blue-200 ml-1">亿元</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <div className="flex items-start gap-3">
+          <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-semibold text-blue-800">辖区口径说明</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">
+                {user.role === 'national' ? '国家级' : user.role === 'provincial' ? '省级' : '市级'}
+              </span>
+            </div>
+            <p className="text-sm text-blue-700 mb-3">
+              本报告统计范围为<strong>{jurisdictionInfo.scopeDesc}</strong>，数据截止至{report.weekEnd}。
+            </p>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <div className="flex items-center gap-1.5">
+                <span className="text-blue-500">●</span>
+                <span className="text-blue-600">纳入项目：</span>
+                <span className="font-semibold text-blue-800">{jurisdictionInfo.projects} 个</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-amber-500">●</span>
+                <span className="text-blue-600">产生预警：</span>
+                <span className="font-semibold text-blue-800">{jurisdictionInfo.warnings} 条</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-red-500">●</span>
+                <span className="text-blue-600">关联投诉：</span>
+                <span className="font-semibold text-blue-800">{jurisdictionInfo.complaints} 条</span>
               </div>
             </div>
           </div>

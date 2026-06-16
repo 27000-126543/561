@@ -115,6 +115,61 @@ export default function Dashboard() {
     return filteredComplaints.filter((c) => projectIds.includes(c.projectId));
   }, [selectedProvinceData, provinceProjects, getFilteredComplaints]);
 
+  const cityRiskDistribution = useMemo(() => {
+    if (!selectedProvinceData) return [];
+    const cityMap = new Map<string, { projects: typeof provinceProjects; warnings: number }>();
+    provinceProjects.forEach((p) => {
+      const city = p.city || '未知';
+      if (!cityMap.has(city)) cityMap.set(city, { projects: [], warnings: 0 });
+      cityMap.get(city)!.projects.push(p);
+    });
+    const provinceWarnings = getFilteredWarnings().filter(
+      (w) => provinceProjects.some((p) => p.id === w.projectId)
+    );
+    provinceWarnings.forEach((w) => {
+      const project = provinceProjects.find((p) => p.id === w.projectId);
+      if (project) {
+        const city = project.city || '未知';
+        const entry = cityMap.get(city);
+        if (entry) entry.warnings += 1;
+      }
+    });
+    return Array.from(cityMap.entries())
+      .map(([city, data]) => ({
+        city,
+        projectCount: data.projects.length,
+        avgPaymentRate: data.projects.length > 0
+          ? Math.round((data.projects.reduce((s, p) => s + p.paymentRate, 0) / data.projects.length) * 10) / 10
+          : 0,
+        avgRiskScore: data.projects.length > 0
+          ? Math.round((data.projects.reduce((s, p) => s + p.riskScore, 0) / data.projects.length) * 10) / 10
+          : 0,
+        warningCount: data.warnings,
+        riskLevel: data.projects.length > 0
+          ? (data.projects.reduce((s, p) => s + p.riskScore, 0) / data.projects.length) >= 70 ? 'high' as const
+            : (data.projects.reduce((s, p) => s + p.riskScore, 0) / data.projects.length) >= 40 ? 'medium' as const
+            : 'low' as const
+          : 'low' as const,
+      }))
+      .sort((a, b) => b.avgRiskScore - a.avgRiskScore);
+  }, [selectedProvinceData, provinceProjects, getFilteredWarnings]);
+
+  const projectRiskRanking = useMemo(() => {
+    if (!selectedProvinceData) return [];
+    return [...provinceProjects]
+      .sort((a, b) => b.riskScore - a.riskScore)
+      .slice(0, 8)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        city: p.city,
+        riskScore: p.riskScore,
+        paymentRate: p.paymentRate,
+        fundRatio: p.fundRatio,
+        riskLevel: p.riskScore >= 70 ? 'high' as const : p.riskScore >= 40 ? 'medium' as const : 'low' as const,
+      }));
+  }, [selectedProvinceData, provinceProjects]);
+
   const handleProvinceClick = (province: ProvinceData) => {
     setSelectedProvince(province.name);
     setSelectedProvinceData((prev) => (prev?.name === province.name ? null : province));
@@ -125,11 +180,13 @@ export default function Dashboard() {
     setSelectedProvince(null);
   };
 
-  const handleGoToProjects = () => {
+  const handleGoToProjects = (city?: string) => {
     if (selectedProvinceData) {
       const params = new URLSearchParams();
       params.set('province', selectedProvinceData.name);
-      if (user.role === 'municipal' && user.city) {
+      if (city) {
+        params.set('city', city);
+      } else if (user.role === 'municipal' && user.city) {
         params.set('city', user.city);
       }
       navigate(`/projects?${params.toString()}`);
@@ -436,7 +493,7 @@ export default function Dashboard() {
                   <span>查看详情</span>
                 </button>
                 <button
-                  onClick={handleGoToProjects}
+                  onClick={() => handleGoToProjects()}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
                 >
                   <Building2 className="w-4 h-4" />
@@ -452,6 +509,48 @@ export default function Dashboard() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-blue-500" />
+                  <h4 className="text-sm font-semibold text-gray-800">市级风险分布</h4>
+                </div>
+                {cityRiskDistribution.length > 0 ? (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {cityRiskDistribution.map((city) => (
+                      <div
+                        key={city.city}
+                        onClick={() => handleGoToProjects(city.city)}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            'w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white',
+                            city.riskLevel === 'high' ? 'bg-red-500' : city.riskLevel === 'medium' ? 'bg-orange-500' : 'bg-green-500'
+                          )}>
+                            {city.avgRiskScore}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-800 group-hover:text-blue-600">{city.city}</div>
+                            <div className="text-xs text-gray-500">{city.projectCount}个项目 · {city.warningCount}条预警</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-gray-700">发放率 {city.avgPaymentRate}%</div>
+                          <div className={cn(
+                            'text-xs',
+                            city.riskLevel === 'high' ? 'text-red-500' : city.riskLevel === 'medium' ? 'text-orange-500' : 'text-green-500'
+                          )}>
+                            {city.riskLevel === 'high' ? '高风险' : city.riskLevel === 'medium' ? '中风险' : '低风险'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-40 flex items-center justify-center text-gray-400 text-sm">暂无市级数据</div>
+                )}
+              </div>
+
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-blue-500" />
@@ -482,6 +581,44 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
+                  <h4 className="text-sm font-semibold text-gray-800">项目风险排行</h4>
+                </div>
+                {projectRiskRanking.length > 0 ? (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {projectRiskRanking.map((project, idx) => (
+                      <div
+                        key={project.id}
+                        className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className={cn(
+                            'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold',
+                            idx === 0 ? 'bg-red-100 text-red-600' : idx === 1 ? 'bg-orange-100 text-orange-600' : idx === 2 ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-500'
+                          )}>
+                            {idx + 1}
+                          </span>
+                          <div>
+                            <div className="text-sm font-medium text-gray-800 line-clamp-1">{project.name}</div>
+                            <div className="text-xs text-gray-500">{project.city} · 发放率{project.paymentRate}% · 资金比{project.fundRatio}%</div>
+                          </div>
+                        </div>
+                        <span className={cn(
+                          'text-sm font-bold',
+                          project.riskLevel === 'high' ? 'text-red-600' : project.riskLevel === 'medium' ? 'text-orange-500' : 'text-green-500'
+                        )}>
+                          {project.riskScore}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-40 flex items-center justify-center text-gray-400 text-sm">暂无项目风险数据</div>
+                )}
               </div>
 
               <div className="lg:col-span-2 space-y-3">
