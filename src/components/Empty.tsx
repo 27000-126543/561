@@ -1,0 +1,18 @@
+import { FileX } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface EmptyProps {
+  description?: string;
+  className?: string;
+}
+
+export default function Empty({ description = '暂无数据', className }: EmptyProps) {
+  return (
+    <div className={cn('flex h-full flex-col items-center justify-center py-8', className)}>
+      <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+        <FileX className="w-8 h-8 text-gray-400" />
+      </div>
+      <p className="text-sm text-gray-500">{description}</p>
+    </div>
+  );
+}
