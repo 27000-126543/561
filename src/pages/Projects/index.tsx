@@ -119,14 +119,26 @@ function ProjectCard({ project }: { project: Project }) {
 
 export default function Projects() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, getFilteredProjects } = useAppStore();
   const projects = useMemo(() => getFilteredProjects(), [user, getFilteredProjects]);
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [selectedProvince, setSelectedProvince] = useState('');
-  const [selectedCity, setSelectedCity] = useState('');
+  const [selectedProvince, setSelectedProvince] = useState(searchParams.get('province') || '');
+  const [selectedCity, setSelectedCity] = useState(searchParams.get('city') || '');
   const [selectedIndustry, setSelectedIndustry] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    const urlProvince = searchParams.get('province');
+    const urlCity = searchParams.get('city');
+    if (urlProvince) {
+      setSelectedProvince(urlProvince);
+    }
+    if (urlCity) {
+      setSelectedCity(urlCity);
+    }
+  }, [searchParams]);
 
   const cities = useMemo(() => {
     if (!selectedProvince) return [];
